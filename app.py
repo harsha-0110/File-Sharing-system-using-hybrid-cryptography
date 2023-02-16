@@ -2,7 +2,9 @@ from flask import Flask, request, render_template, send_file
 from flask_restful import Resource, Api
 from flask_cors import CORS
 import mysql.connector
-import json
+import os, io, base64, json
+import aes
+
 
 app = Flask(__name__)
 CORS(app)
@@ -13,10 +15,10 @@ conn = mysql.connector.connect(
     host="localhost",
     user="root",
     password="",
-    database="database"
+    database="database1"
 )
 cursor = conn.cursor()
-cursor.execute('set global max_allowed_packet=1048576000;')
+cursor.execute('set global max_allowed_packet=2147483648;')
 
 class Signup(Resource):
     def post(self):
@@ -39,7 +41,6 @@ class Signup(Resource):
 class Login(Resource):
     def post(self):
         # Get the request data
-        print("Login")
         data = request.get_json()
         email = data["email"]
         password = data["password"]
@@ -55,11 +56,9 @@ class Login(Resource):
 class SendFile(Resource):
     def post(self):
         # Get the request data
-        print("start")
         form_data = request.form
         file = request.files.get("file")
         sender = form_data.get("sender")
-        print(sender)
         receiver = form_data.get("receiver")
 
         # Check if the receiver exists
@@ -67,14 +66,21 @@ class SendFile(Resource):
         cursor.execute("SELECT * FROM users WHERE email = %s", (receiver,))
         result = cursor.fetchone()
         if not result:
-            print("Not found")
             return {"message": "Receiver not found"}, 400
-
+        key = aes.generate_key()
+        bkey = base64.b64encode(key)
         # Store the file in the receiver's database
         filename = file.filename
         file_data = file.read()
-        cursor.execute("INSERT INTO files (email, filename, data, sender) VALUES (%s, %s, %s, %s)", (receiver, filename, file_data, sender))
+        with open(filename, 'wb') as f:
+            f.write(file_data)
+        enc = aes.encrypt_file(key, filename)
+        with open(enc, 'rb') as f:
+            txt = f.read()
+        cursor.execute("INSERT INTO files (email, filename, data, sender, publickey) VALUES (%s, %s, %s, %s, %s)", (receiver, enc, txt, sender, bkey))
         print("File Sent")
+        os.remove(filename)
+        os.remove(enc)
         conn.commit()
         return {"message": "File sent successfully"}, 200
 
@@ -103,13 +109,23 @@ class DownloadFile(Resource):
         result = cursor.fetchone()
         if not result:
             return {"message": "File not found"}, 400
-        
         # Send the file data to the client
         filename = result[2]
         file_data = result[3]
-        with open("temp", 'wb') as outfile:
-            outfile.write(file_data)
-        return send_file("./temp", download_name=filename, as_attachment=True)
+        bkey = result[5]
+        key = base64.b64decode(bkey)
+        with open(filename, "wb") as f:
+            f.write(file_data)
+        dec = aes.decrypt_file(key, filename)
+        return_data = io.BytesIO()
+        with open(dec, 'rb') as fo:
+            return_data.write(fo.read())
+            return_data.seek(0)
+        os.remove(filename)
+        os.remove(dec)
+        return send_file(return_data, download_name=dec, as_attachment=True)
+        
+        
 
 class DeleteFile(Resource):
     def post(self, file_id):

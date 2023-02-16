@@ -380,7 +380,7 @@
               c3.innerText = sender
               var link = "/download/" + id
               c4.innerHTML = "<a href=" + link + ">Download</a>"
-              c5.innerHTML = "<button onclick='deleteFile(" + id + ");getFiles();'>Delete</button>"
+              c5.innerHTML = "<button onclick='deleteFile(" + id + ")'>Delete</button>"
             }
           })
           .catch(error => {
