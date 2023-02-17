@@ -1,152 +1,420 @@
-from flask import Flask, request, render_template, send_file
-from flask_restful import Resource, Api
-from flask_cors import CORS
-import mysql.connector
-import os, io, base64, json
-import aes
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8">
+    <title>File Sharing using Hybrid Cryptography</title>
+    <style>
+      body {
+        font-family: Arial, sans-serif;
+        font-size: 14px;
+        line-height: 1.5;
+        color: #333;
+        margin: auto;
+        height: auto;
+      }
 
+      header {
+        margin: auto;
+        padding: 10px;
+        height: auto;
+        text-align: center;
+        color: white;
+        background-color: #333;
+      }
 
-app = Flask(__name__)
-CORS(app)
-api = Api(app)
+      footer {
+        position: fixed;
+        left: 0;
+        bottom: 0;
+        width: 100%;
+        margin: auto;
+        height: auto;
+        padding: 20px;
+        text-align: center;
+        color: white;
+        background-color: #333;
+      }
 
-# Connect to the MySQL database
-conn = mysql.connector.connect(
-    host="localhost",
-    user="root",
-    password="",
-    database="database1"
-)
-cursor = conn.cursor()
-cursor.execute('set global max_allowed_packet=2147483648;')
+      h1,
+      h2 {
+        font-weight: bold;
+        margin: 10px 0;
+      }
 
-class Signup(Resource):
-    def post(self):
-        # Get the request data
-        data = request.get_json()
-        email = data["email"]
-        password = data["password"]
+      nav button,
+      button[id="logout"] {
+        padding: 10px 20px;
+        background-color: #ccc;
+        border: none;
+        border-radius: 4px;
+        font-size: 16px;
+        cursor: pointer;
+        margin: 0 10px;
+      }
 
-        # Check if the email already exists
-        cursor.execute("SELECT * FROM users WHERE email = %s", (email,))
-        result = cursor.fetchone()
-        if result:
-            return {"message": "Email already exists"}, 400
+      #logout {
+        position: absolute;
+        top: 20px;
+        right: 15px
+      }
 
-        # Insert the new user into the database
-        cursor.execute("INSERT INTO users (email, password) VALUES (%s, %s)", (email, password))
-        conn.commit()
-        return {"message": "Signup successful"}, 201
+      nav button:hover {
+        background-color: #ddd;
+      }
 
-class Login(Resource):
-    def post(self):
-        # Get the request data
-        data = request.get_json()
-        email = data["email"]
-        password = data["password"]
+      #signup-form,
+      #login-form,
+      #send-file-form,
+      #my-files {
+        display: none;
+        width: 50%;
+        margin: 20px auto;
+        padding: 20px;
+        background-color: #f5f5f5;
+        border: 1px solid #ddd;
+        border-radius: 4px;
+      }
 
-        # Check if the email and password match
-        cursor.execute("SELECT * FROM users WHERE email = %s AND password = %s", (email, password))
-        result = cursor.fetchone()
-        if not result:
-            return {"message": "Email and password do not match"}, 401
+      #signup-form form,
+      #login-form form,
+      #send-file-form form {
+        display: flex;
+        flex-direction: column;
+      }
 
-        return {"message": "Login successful1"}, 201
+      form div {
+        margin: 10px 0;
+      }
 
-class SendFile(Resource):
-    def post(self):
-        # Get the request data
-        form_data = request.form
-        file = request.files.get("file")
-        sender = form_data.get("sender")
-        receiver = form_data.get("receiver")
+      label {
+        font-weight: bold;
+      }
 
-        # Check if the receiver exists
+      input[type="email"],
+      input[type="password"],
+      input[type="text"],
+      input[type="file"] {
+        padding: 10px;
+        font-size: 14px;
+        border: 1px solid #ddd;
+        border-radius: 4px;
+        width: 100%;
+        box-sizing: border-box;
+      }
 
-        cursor.execute("SELECT * FROM users WHERE email = %s", (receiver,))
-        result = cursor.fetchone()
-        if not result:
-            return {"message": "Receiver not found"}, 400
-        key = aes.generate_key()
-        bkey = base64.b64encode(key)
-        # Store the file in the receiver's database
-        filename = file.filename
-        file_data = file.read()
-        with open(filename, 'wb') as f:
-            f.write(file_data)
-        enc = aes.encrypt_file(key, filename)
-        with open(enc, 'rb') as f:
-            txt = f.read()
-        cursor.execute("INSERT INTO files (email, filename, data, sender, publickey) VALUES (%s, %s, %s, %s, %s)", (receiver, enc, txt, sender, bkey))
-        print("File Sent")
-        os.remove(filename)
-        os.remove(enc)
-        conn.commit()
-        return {"message": "File sent successfully"}, 200
+      input[type="email"]:focus,
+      input[type="password"]:focus,
+      input[type="text"]:focus,
+      input[type="file"]:focus {
+        border-color: #888;
+        outline: none;
+      }
 
-class GetFiles(Resource):
-    def post(self):
-        # Get the request data
-        data = request.get_json()
-        email = data["email"]
-        # Get the files associated with the email
-        cursor.execute("SELECT * FROM files WHERE email = %s", (email,))
-        result = cursor.fetchall()
-        # Return the files in JSON format
-        if result:
-            files = []
-            for file in result:
-                files.append({"id": file[0], "sender" : file[4], "filename" : file[2]})
-            json_data = json.dumps(files)
-            return json_data, 200
-        else:
-            return {"message": "No files found for this user"}, 400
+      button[id="signup-submit"],
+      button[id="login-submit"],
+      button[id="send-file-submit"],
+      button[id="refresh"] {
+        margin-top: 10px;
+        padding: 10px 20px;
+        width: 100%;
+        background-color: #333;
+        color: #fff;
+        border: none;
+        border-radius: 4px;
+        cursor: pointer;
+      }
 
-class DownloadFile(Resource):
-    def get(self, file_id):
-        # Get the file from the database using the file id
-        cursor.execute("SELECT * FROM files WHERE id = %s", (file_id,))
-        result = cursor.fetchone()
-        if not result:
-            return {"message": "File not found"}, 400
-        # Send the file data to the client
-        filename = result[2]
-        file_data = result[3]
-        bkey = result[5]
-        key = base64.b64decode(bkey)
-        with open(filename, "wb") as f:
-            f.write(file_data)
-        dec = aes.decrypt_file(key, filename)
-        return_data = io.BytesIO()
-        with open(dec, 'rb') as fo:
-            return_data.write(fo.read())
-            return_data.seek(0)
-        os.remove(filename)
-        os.remove(dec)
-        return send_file(return_data, download_name=dec, as_attachment=True)
-        
-        
+      button[id="signup-submit"]:hover,
+      button[id="login-submit"]:hover,
+      button[id="send-file-submit"]:hover,
+      button[id="refresh"]:hover {
+        background-color: #444;
+      }
 
-class DeleteFile(Resource):
-    def post(self, file_id):
-        # Delete the file from the database using the file id
-        cursor.execute("DELETE FROM files WHERE id = %s", (file_id,))
-        conn.commit()
-        return {"message": "File Deleted successfully"}, 200
+      #my-files table {
+        width: 100%;
+        border-collapse: collapse;
+        margin-top: 20px;
+      }
 
+      #my-files th,
+      #my-files td {
+        padding: 10px;
+        border: 1px solid #ddd;
+        text-align: left;
+      }
 
+      #my-files th {
+        background-color: #333;
+        color: #fff;
+      }
 
+      #my-files tr:nth-child(even) {
+        background-color: #ccc;
+      }
 
-api.add_resource(Signup, "/signup")
-api.add_resource(Login, "/login")
-api.add_resource(SendFile, "/sendfile")
-api.add_resource(GetFiles, "/getfiles")
-api.add_resource(DownloadFile, "/download/<file_id>")
-api.add_resource(DeleteFile, "/delete/<file_id>")
+      #messages {
+        margin: auto;
+        text-align: center;
+        margin-bottom: 10px;
+        background-color: white;
+      }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h1>File Sharing using Hybrid Cryptography</h1>
+      <button id="logout" onclick="window.location.reload()" style="display: none;">Logout</button>
+    </header>
+    <!-- Signup form -->
+    <div id="signup-form" style="display: none">
+      <h2>Signup</h2>
+      <form>
+        <div>
+          <label for="signup-email">Email:</label>
+          <input type="email" id="signup-email">
+        </div>
+        <div>
+          <label for="signup-password">Password:</label>
+          <input type="password" id="signup-password">
+        </div>
+        <button id="signup-submit">Submit</button>
+      </form>
+    </div>
+    <!-- Login form -->
+    <div id="login-form" style="display: block">
+      <h2>Login</h2>
+      <form>
+        <div>
+          <label for="login-email">Email:</label>
+          <input type="email" id="login-email">
+        </div>
+        <div>
+          <label for="login-password">Password:</label>
+          <input type="password" id="login-password">
+        </div>
+        <button id="login-submit">Submit</button>
+      </form>
+    </div>
+    <!-- File sending form -->
+    <div id="send-file-form" style="display: none">
+      <h2>Send File</h2>
+      <form>
+        <div>
+          <label for="sender">Sender:</label>
+          <input type="text" id="sender" disabled>
+        </div>
+        <div>
+          <label for="receiver">Receiver:</label>
+          <input type="email" id="receiver" required>
+        </div>
+        <div>
+          <label for="file">File:</label>
+          <input type="file" id="file" required>
+        </div>
+        <button id="send-file-submit">Submit</button>
+      </form>
+    </div>
+    <div id="my-files" style="display: none;">
+      <h1>Files</h1>
+      <!-- <button onclick="getFiles()">Get Files</button> -->
+      <table id="file-table">
+        <thead>
+          <tr>
+            <th>ID</th>
+            <th>File name</th>
+            <th>Sender</th>
+            <th>Download</th>
+            <th>Delete</th>
+          </tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+      <button id="refresh" onclick="getFiles()">Refresh Files</button>
+    </div>
+    <!-- Messages -->
+    <div id="messages"></div>
+    <!-- Navigation -->
+    <footer id="footer" style="display: block">
+      <nav>
+        <div id="signup-button" style="display: block;">
+          <label for="show-signup-form">Don't have account the button to signup:</label>
+          <button id="show-signup-form">Signup</button>
+        </div>
+        <div id="login-button" style="display: none;">
+          <label for="show-login-form">Click the button to login:</label>
+          <button id="show-login-form">Login</button>
+        </div>
+      </nav>
+    </footer>
+    <!-- JavaScript -->
+    <script>
+      const showSignupForm = document.querySelector("#show-signup-form");
+      const showLoginForm = document.querySelector("#show-login-form");
+      const signupForm = document.querySelector("#signup-form");
+      const loginForm = document.querySelector("#login-form");
+      const sendFileForm = document.querySelector("#send-file-form");
+      const signupSubmit = document.querySelector("#signup-submit");
+      const loginSubmit = document.querySelector("#login-submit");
+      const sendFileSubmit = document.querySelector("#send-file-submit");
+      const myFiles = document.querySelector("#my-files");
+      const messages = document.querySelector("#messages");
+      const sender = document.querySelector("#sender");
+      const fileTable = document.querySelector("#file-table tbody");
+      const footer = document.querySelector("#footer");
+      const logout = document.querySelector("#logout");
+      const signupButton = document.querySelector("#signup-button");
+      const loginButton = document.querySelector("#login-button");
+      let user = null;
+      showSignupForm.addEventListener("click", () => {
+        signupForm.style.display = "block";
+        loginForm.style.display = "none";
+        sendFileForm.style.display = "none";
+        loginButton.style.display = "block";
+        signupButton.style.display = "none";
+      });
+      showLoginForm.addEventListener("click", () => {
+        signupForm.style.display = "none";
+        loginForm.style.display = "block";
+        sendFileForm.style.display = "none";
+        myFiles.style.display = "none";
+        loginButton.style.display = "none";
+        signupButton.style.display = "block";
+      });
+      signupSubmit.addEventListener("click", async (event) => {
+        event.preventDefault();
+        const email = document.querySelector("#signup-email").value;
+        const password = document.querySelector("#signup-password").value;
+        try {
+          const response = await fetch("/signup", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json"
+            },
+            body: JSON.stringify({
+              email,
+              password
+            })
+          });
+          const data = await response.json();
+          if (response.ok) {
+            messages.innerHTML = "Signup successful";
+            showLoginForm.click();
+          } else {
+            messages.innerHTML = data.message;
+          }
+        } catch (error) {
+          messages.innerHTML = "Error while signing up";
+        }
+      });
+      loginSubmit.addEventListener("click", async (event) => {
+        event.preventDefault();
+        const email = document.querySelector("#login-email").value;
+        const password = document.querySelector("#login-password").value;
+        try {
+          const response = await fetch("/login", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json"
+            },
+            body: JSON.stringify({
+              email,
+              password
+            })
+          });
+          const data = await response.json();
+          if (response.ok) {
+            user = data.user;
+            sender.value = email;
+            sendFileForm.style.display = "block";
+            myFiles.style.display = "block";
+            signupForm.style.display = "none";
+            loginForm.style.display = "none";
+            logout.style.display = "block";
+            footer.style.display = "none";
+            getFiles();
+          } else {
+            messages.innerHTML = data.message;
+          }
+        } catch (error) {
+          console.log(error);
+          messages.innerHTML = "Error while logging in";
+        }
+      });
+      sendFileSubmit.addEventListener("click", async (event) => {
+        event.preventDefault();
+        const file = document.querySelector("#file").files[0];
+        const receiver = document.querySelector("#receiver").value;
+        try {
+          const formData = new FormData();
+          formData.append("sender", sender.value);
+          formData.append("receiver", receiver);
+          formData.append("file", file);
+          const response = await fetch("/sendfile", {
+            method: "POST",
+            body: formData
+          });
+          const data = await response.json();
+          if (response.ok) {
+            messages.innerHTML = "File successfully sent";
+          } else {
+            messages.innerHTML = data.message;
+          }
+        } catch (error) {
+          messages.innerHTML = "Error while sending file";
+        }
+        getFiles()
+      });
 
-@app.route("/")
-def main():
-    return render_template("index.html")
-
-if __name__ == "__main__":
-    app.run(host="0.0.0.0", debug=True)
+      function getFiles() {
+        const email = document.querySelector("#login-email").value;
+        var table = document.getElementById("file-table");
+        var tableBody = table.getElementsByTagName("tbody")[0];
+        while (tableBody.firstChild) {
+          tableBody.removeChild(tableBody.firstChild);
+        }
+        fetch("/getfiles", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json"
+          },
+          body: JSON.stringify({
+            email
+          })
+        }).then(response => response.json()).then(data => {
+          var obj = JSON.parse(data);
+          //var obj = Ext.util.JSON.decode(data);
+          for (var i = 0; i < obj.length; i++) {
+            var id = obj[i].id;
+            var filename = obj[i].filename;
+            var sender = obj[i].sender;
+            let row = fileTable.insertRow(-1);
+            let c1 = row.insertCell(0);
+            let c2 = row.insertCell(1);
+            let c3 = row.insertCell(2);
+            let c4 = row.insertCell(3);
+            let c5 = row.insertCell(4);
+            c1.innerText = id
+            c2.innerText = filename
+            c3.innerText = sender
+            var link = "/download/" + id
+            c4.innerHTML = " < a href = " + link + " > Download < /a>"
+            c5.innerHTML = " < button onclick = 'deleteFile(" + id + ")' > Delete < /button>"
+          }
+        }).catch(error => {
+          messages.innerHTML = "No files Found";
+        });
+      }
+      async function deleteFile(id) {
+        const response = await fetch(`/delete/${id}`, {
+          method: "POST",
+        }).then(response => response.json())
+        if (response.ok) {
+          messages.innerHTML = "File deleted";
+        } else {
+          messages.innerHTML = response.message;
+        }
+      }
+    </script>
+  </body>
+</html>
