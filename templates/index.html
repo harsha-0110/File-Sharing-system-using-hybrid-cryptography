@@ -398,8 +398,8 @@
             c2.innerText = filename
             c3.innerText = sender
             var link = "/download/" + id
-            c4.innerHTML = " < a href = " + link + " > Download < /a>"
-            c5.innerHTML = " < button onclick = 'deleteFile(" + id + ")' > Delete < /button>"
+            c4.innerHTML = " <a href=" + link + " >Download</a>"
+            c5.innerHTML = " <button onclick='deleteFile(" + id + ")'>Delete</button>"
           }
         }).catch(error => {
           messages.innerHTML = "No files Found";
